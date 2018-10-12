@@ -11,3 +11,5 @@ dist
 local.mk
 
 .envrc
+
+.idea/
