@@ -172,9 +172,9 @@ class ESPLoader(object):
     ESP_RUN_USER_CODE = 0xD3
 
     # Maximum block sized for RAM and Flash writes, respectively.
-    ESP_RAM_BLOCK   = 0x1800
+    ESP_RAM_BLOCK   = 0x180
 
-    FLASH_WRITE_SIZE = 0x400
+    FLASH_WRITE_SIZE = 0x40
 
     # Default baudrate. The ROM auto-bauds, so we can use more or less whatever we want.
     ESP_ROM_BAUD    = 115200
@@ -487,9 +487,18 @@ class ESPLoader(object):
 
     """ Send a block of an image to RAM """
     def mem_block(self, data, seq):
-        return self.check_command("write to target RAM", self.ESP_MEM_DATA,
-                                  struct.pack('<IIII', len(data), seq, 0, 0) + data,
-                                  self.checksum(data))
+        retry_max = 3
+        failed = 0
+
+        while True:
+            try:
+                return self.check_command("write to target RAM", self.ESP_MEM_DATA,
+                                          struct.pack('<IIII', len(data), seq, 0, 0) + data,
+                                          self.checksum(data))
+            except StopIteration:
+                failed += 1
+                if failed > retry_max:
+                    raise
 
     """ Leave download mode and run the application """
     def mem_finish(self, entrypoint=0):
