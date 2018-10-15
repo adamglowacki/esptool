@@ -174,7 +174,7 @@ class ESPLoader(object):
     # Maximum block sized for RAM and Flash writes, respectively.
     ESP_RAM_BLOCK   = 0x180
 
-    FLASH_WRITE_SIZE = 0x40
+    FLASH_WRITE_SIZE = 0x300
 
     # Default baudrate. The ROM auto-bauds, so we can use more or less whatever we want.
     ESP_ROM_BAUD    = 115200
@@ -330,31 +330,42 @@ class ESPLoader(object):
 
         raise FatalError("Response doesn't match request")
 
-    def check_command(self, op_description, op=None, data=b'', chk=0, timeout=DEFAULT_TIMEOUT):
+    def check_command(self, op_description, op=None, data=b'', chk=0, timeout=DEFAULT_TIMEOUT, retry_cnt=2):
         """
         Execute a command with 'command', check the result code and throw an appropriate
         FatalError if it fails.
 
         Returns the "result" of a successful command.
         """
-        val, data = self.command(op, data, chk, timeout=timeout)
+        while True:
+            try:
+                val, data = self.command(op, data, chk, timeout=timeout)
 
-        # things are a bit weird here, bear with us
+                # things are a bit weird here, bear with us
 
-        # the status bytes are the last 2/4 bytes in the data (depending on chip)
-        if len(data) < self.STATUS_BYTES_LENGTH:
-            raise FatalError("Failed to %s. Only got %d byte status response." % (op_description, len(data)))
-        status_bytes = data[-self.STATUS_BYTES_LENGTH:]
-        # we only care if the first one is non-zero. If it is, the second byte is a reason.
-        if byte(status_bytes, 0) != 0:
-            raise FatalError.WithResult('Failed to %s' % op_description, status_bytes)
+                # the status bytes are the last 2/4 bytes in the data (depending on chip)
+                if len(data) < self.STATUS_BYTES_LENGTH:
+                    raise FatalError("Failed to %s. Only got %d byte status response." % (op_description, len(data)))
+                status_bytes = data[-self.STATUS_BYTES_LENGTH:]
+                # we only care if the first one is non-zero. If it is, the second byte is a reason.
+                if byte(status_bytes, 0) != 0:
+                    raise FatalError.WithResult('Failed to %s' % op_description, status_bytes)
 
-        # if we had more data than just the status bytes, return it as the result
-        # (this is used by the md5sum command, maybe other commands?)
-        if len(data) > self.STATUS_BYTES_LENGTH:
-            return data[:-self.STATUS_BYTES_LENGTH]
-        else:  # otherwise, just return the 'val' field which comes from the reply header (this is used by read_reg)
-            return val
+                # if we had more data than just the status bytes, return it as the result
+                # (this is used by the md5sum command, maybe other commands?)
+                if len(data) > self.STATUS_BYTES_LENGTH:
+                    return data[:-self.STATUS_BYTES_LENGTH]
+                else:
+                    # otherwise, just return the 'val' field which comes from the reply header
+                    # (this is used by read_reg)
+                    return val
+            except FatalError:
+                if retry_cnt > 0:
+                    retry_cnt -= 1
+                    self.flush_input()
+                    self._port.flushOutput()
+                else:
+                    raise
 
     def flush_input(self):
         self._port.flushInput()
@@ -487,18 +498,9 @@ class ESPLoader(object):
 
     """ Send a block of an image to RAM """
     def mem_block(self, data, seq):
-        retry_max = 3
-        failed = 0
-
-        while True:
-            try:
-                return self.check_command("write to target RAM", self.ESP_MEM_DATA,
-                                          struct.pack('<IIII', len(data), seq, 0, 0) + data,
-                                          self.checksum(data))
-            except StopIteration:
-                failed += 1
-                if failed > retry_max:
-                    raise
+        return self.check_command("write to target RAM", self.ESP_MEM_DATA,
+                                  struct.pack('<IIII', len(data), seq, 0, 0) + data,
+                                  self.checksum(data), retry_cnt=3)
 
     """ Leave download mode and run the application """
     def mem_finish(self, entrypoint=0):
@@ -624,7 +626,8 @@ class ESPLoader(object):
     @stub_and_esp32_function_only
     def flash_defl_block(self, data, seq, timeout=DEFAULT_TIMEOUT):
         self.check_command("write compressed data to flash after seq %d" % seq,
-                           self.ESP_FLASH_DEFL_DATA, struct.pack('<IIII', len(data), seq, 0, 0) + data, self.checksum(data), timeout=timeout)
+                           self.ESP_FLASH_DEFL_DATA, struct.pack('<IIII', len(data), seq, 0, 0) + data,
+                           self.checksum(data), timeout=timeout)
 
     """ Leave compressed flash mode and run/reboot """
     @stub_and_esp32_function_only
@@ -666,8 +669,7 @@ class ESPLoader(object):
     @stub_function_only
     def erase_flash(self):
         # depending on flash chip model the erase may take this long (maybe longer!)
-        self.check_command("erase flash", self.ESP_ERASE_FLASH,
-                           timeout=CHIP_ERASE_TIMEOUT)
+        self.check_command("erase flash", self.ESP_ERASE_FLASH, timeout=CHIP_ERASE_TIMEOUT)
 
     @stub_function_only
     def erase_region(self, offset, size):
