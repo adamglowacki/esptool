@@ -1201,7 +1201,7 @@ class ESP8266ROM(ESPLoader):
 class ESP8266StubLoader(ESP8266ROM):
     """ Access class for ESP8266 stub loader, runs on top of ROM.
     """
-    FLASH_WRITE_SIZE = 0x4000  # matches MAX_WRITE_BLOCK in stub_loader.c
+#    FLASH_WRITE_SIZE = 0x4000  # matches MAX_WRITE_BLOCK in stub_loader.c
     IS_STUB = True
 
     def __init__(self, rom_loader):
@@ -1678,7 +1678,7 @@ class ESP32S2StubLoader(ESP32S2ROM):
     (Basically the same as ESP2StubLoader, but different base class.
     Can possibly be made into a mixin.)
     """
-    FLASH_WRITE_SIZE = 0x4000  # matches MAX_WRITE_BLOCK in stub_loader.c
+#    FLASH_WRITE_SIZE = 0x4000  # matches MAX_WRITE_BLOCK in stub_loader.c
     STATUS_BYTES_LENGTH = 2  # same as ESP8266, different to ESP32 ROM
     IS_STUB = True
 
